@@ -1,0 +1,209 @@
+﻿//#include <MarchingTables.hlsli>
+#pragma kernel MCMain
+
+static int2 edge_list[12] =
+{
+    int2(0,1), int2(1,2), int2(2,3), int2(3,0), int2(4,5), int2(5,6), int2(6,7), int2(7,4), int2(0,4), int2(1,5), int2(2,6), int2(3,7)
+};
+
+struct myVertex{
+	float3 vertPos;
+	float3 vertNormal;
+};
+
+struct myTriangle{
+	float3 wsPos1;  
+    float3 wsNormal1;  
+    float3 wsPos2;  
+    float3 wsNormal2;  
+    float3 wsPos3;  
+    float3 wsNormal3; 
+};
+
+//RWStructuredBuffer<myVertex> vBuffer;
+AppendStructuredBuffer<myTriangle> triBuffer;
+StructuredBuffer<int> case_to_numpolys;
+StructuredBuffer<int> edge_connect_list;
+
+Texture3D<float> densityTexture;
+SamplerState _LinearClamp;
+
+float invVoxelDim;
+float3 wsChunkPosLL;
+float3 wsChunkDim;
+int voxelDim;
+
+float3 localToTextureCoord(float3 localCoord)
+{
+	float3 uvw = localCoord;
+	uvw.y = 1 - uvw.y;
+	return uvw;
+}
+
+float3 CalculateVertex(float3 p1, float3 p2, float d1, float d2)
+{
+	float3 dir = (p2 - p1);
+	float s = -d1 / (d2 - d1);
+	return p1 + s*dir;
+
+}
+
+float3 CalculateNormal(float3 uvw)
+{
+	float d = invVoxelDim;
+	float3 gradient;
+	gradient.x = densityTexture.SampleLevel(_LinearClamp, uvw + float3(d, 0, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(-d, 0, 0), 0).x;
+	gradient.y = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, d, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, -d, 0), 0).x;
+	gradient.z = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, d), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, -d), 0).x;
+
+	return -normalize(gradient);
+}
+
+myVertex GetVertex(float3 p1Local, float3 p2Local, float p1Density, float p2Density )
+{
+	float3 pLocal = CalculateVertex(p1Local, p2Local, p1Density, p2Density);
+	float3 uvw = pLocal;
+	uvw.y = 1 - uvw.y;
+	float3 normal = CalculateNormal(uvw);
+	// convert from local to world coordinates
+	float3 wsVertexPos = wsChunkPosLL + (pLocal * wsChunkDim);
+	myVertex vert;
+	vert.vertPos = wsVertexPos;
+	vert.vertNormal = normal;
+
+	return vert;
+}
+[numthreads(2,2,2)]
+void MCMain (uint3 id : SV_DispatchThreadID)
+{
+  /*  
+	float cellDensity[8];	// density values at each corner of the voxel/cell (local to each thread)
+	float3 localCoords[8];	// local coordinates for each corner within the chunk (local to each thread)
+
+	float3 localCoordLL = float3((id.x * invVoxelDim), (id.y * invVoxelDim), (id.z * invVoxelDim));
+	localCoordLL = id.xyz * invVoxelDim;
+	localCoords[0] = localCoordLL;											// v0 - lower left
+	localCoords[1] = localCoordLL + float3(0, invVoxelDim, 0);				// v1 - upper left
+	localCoords[2] = localCoordLL + float3(invVoxelDim, invVoxelDim, 0);	// v2 - upper right
+	localCoords[3] = localCoordLL + float3(invVoxelDim, 0, 0);				// v3 - lower right
+
+	localCoords[4] = localCoordLL + float3(0, 0, invVoxelDim);						// v4 - lower back left
+	localCoords[5] = localCoordLL + float3(0, invVoxelDim, invVoxelDim);			// v5 - upper back left
+	localCoords[6] = localCoordLL + float3(invVoxelDim, invVoxelDim, invVoxelDim);	// v6 - upper back right
+	localCoords[7] = localCoordLL + float3(invVoxelDim, 0, invVoxelDim);			// v7 - lower back right
+
+	int caseNumber = 0;
+	float3 offset = float3(0,0,0);
+	for (int i = 0; i < 8; i++)
+	{
+		half3 sampCoord = localCoords[i];
+		sampCoord.y = 1 - sampCoord.y;
+		cellDensity[i] = densityTexture.SampleLevel(_LinearClamp, sampCoord, 0, offset).x;
+		//if( cellDensity[i] >= 0) caseNumber |= 1 << i;
+	}
+
+	caseNumber = 0;
+	if (cellDensity[0] >= 0) caseNumber |= 1;
+	if (cellDensity[1] >= 0) caseNumber |= 2;
+	if (cellDensity[2] >= 0) caseNumber |= 4;
+	if (cellDensity[3] >= 0) caseNumber |= 8;
+	if (cellDensity[4] >= 0) caseNumber |= 16;
+	if (cellDensity[5] >= 0) caseNumber |= 32;
+	if (cellDensity[6] >= 0) caseNumber |= 64;
+	if (cellDensity[7] >= 0) caseNumber |= 128;
+
+	int numPolys = case_to_numpolys[caseNumber];
+	*/
+	// TODO: insert actual code here!
+	float cellDensity[8];	// density values at each corner of the voxel/cell (local to each thread)
+	float3 localCoords[8];	// local coordinates for each corner within the chunk (local to each thread)
+	
+	// lower left corners local coordinate
+	float3 localCoordLL = (float3)(id * invVoxelDim);
+	localCoords[0] = localCoordLL;											// v0 - lower left
+	localCoords[1] = localCoordLL + float3(0, invVoxelDim, 0);				// v1 - upper left
+	localCoords[2] = localCoordLL + float3(invVoxelDim, invVoxelDim, 0);	// v2 - upper right
+	localCoords[3] = localCoordLL + float3(invVoxelDim, 0, 0);				// v3 - lower right
+
+	localCoords[4] = localCoordLL + float3(0, 0, invVoxelDim);						// v4 - lower back left
+	localCoords[5] = localCoordLL + float3(0, invVoxelDim, invVoxelDim);			// v5 - upper back left
+	localCoords[6] = localCoordLL + float3(invVoxelDim, invVoxelDim, invVoxelDim);	// v6 - upper back right
+	localCoords[7] = localCoordLL + float3(invVoxelDim, 0, invVoxelDim);			// v7 - lower back right
+
+	int caseNumber = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		half3 sampCoord = localToTextureCoord(localCoords[i]);
+		cellDensity[i] = densityTexture.SampleLevel(_LinearClamp, sampCoord, 0);
+		if( cellDensity[i] >= 0) caseNumber |= 1 << i;
+	}
+
+	int numPolys = 0;
+	numPolys = case_to_numpolys[caseNumber];
+
+
+	for(int n = 0; n < numPolys; n++)
+	{
+		//int3 edges = edge_connect_list[caseNumber][n];
+		int edgeNum = edge_connect_list[caseNumber*15 + (3*n)];
+		myTriangle tri;
+
+		//int v1 = edge_list[edges.x].x;
+		//int v2 = edge_list[edges.x].y;
+		int v1 = edge_list[edgeNum].x;
+		int v2 = edge_list[edgeNum].y;
+		float3 p1Local = localCoords[v1];
+		float3 p2Local = localCoords[v2];
+		myVertex vertex = GetVertex(p1Local, p2Local, cellDensity[v1], cellDensity[v2]);
+		tri.wsPos1 = vertex.vertPos;
+		tri.wsNormal1 = vertex.vertNormal;
+
+		//v1 = edge_list[edges.y].x;
+		//v2 = edge_list[edges.y].y;
+		edgeNum = edge_connect_list[caseNumber*15 + (3*n+1)];
+		v1 = edge_list[edgeNum].x;
+		v2 = edge_list[edgeNum].y;
+
+		p1Local = localCoords[v1];
+		p2Local = localCoords[v2];
+		vertex = GetVertex(p1Local, p2Local, cellDensity[v1], cellDensity[v2]);
+		tri.wsPos2 = vertex.vertPos;
+		tri.wsNormal2 = vertex.vertNormal;
+
+		//v1 = edge_list[edges.z].x;
+		//v2 = edge_list[edges.z].y;
+		edgeNum = edge_connect_list[caseNumber*15 + (3*n+2)];
+		v1 = edge_list[edgeNum].x;
+		v2 = edge_list[edgeNum].y;
+		p1Local = localCoords[v1];
+		p2Local = localCoords[v2];
+		vertex = GetVertex(p1Local, p2Local, cellDensity[v1], cellDensity[v2]);
+		tri.wsPos3 = vertex.vertPos;
+		tri.wsNormal3 = vertex.vertNormal;
+
+		triBuffer.Append(tri);
+
+		myTriangle t;
+		t.wsPos1 = float3(0,0,0);
+		t.wsPos2 = float3(0,1,0);
+		t.wsPos3 = float3(1,1,0);
+
+		t.wsNormal1 = float3(0,0,1);
+		t.wsNormal2 = float3(0,0,1);
+		t.wsNormal3 = float3(0,0,1);
+		triBuffer.Append(t);
+		
+
+	}
+	/*
+	myTriangle t;
+	t.wsPos1 = float3(0,0,0);
+	t.wsPos2 = float3(0,1,0);
+	t.wsPos3 = float3(1,1,0);
+
+	t.wsNormal1 = float3(0,0,1);
+	t.wsNormal2 = float3(0,0,1);
+	t.wsNormal3 = float3(0,0,1);
+	triBuffer.Append(t);
+    */
+}

@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: f6ebd02ecaf25d642a3a92c6834852b5
+timeCreated: 1425978986
+licenseType: Free
+MonoImporter:
+  serializedVersion: 2
+  defaultReferences:
+  - m_buildDensityShader: {fileID: 7200000, guid: c9ee27dcf9af4f4458512e008e16c6a9,
+      type: 3}
+  - m_genVerticesShader: {fileID: 7200000, guid: 3c71ccfd15d750a489a9b52ad0cc0e57,
+      type: 3}
+  - m_chunkMat: {fileID: 2100000, guid: 21d289d572c73554ea8b93a3647d6549, type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -1,0 +1,74 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel ComputeDens1
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+
+Texture3D<float4> NoiseVol1;
+Texture3D<float4> NoiseVol2;
+Texture3D<float4> NoiseVol3;
+Texture3D<float4> NoiseVol4;
+
+SamplerState samplerNoiseVol1;
+float invVoxelDim;
+float3 wsChunkPosLL;
+uint3 wsChunkDim;
+
+RWTexture3D<float> densityTexture;
+float SphereDensity(uint3 tID)
+{
+	float invVoxelDim = 1.0f / 32.0f;
+	float radius = 0.4f;
+	float3 localPos = float3((tID.x * invVoxelDim), (tID.y * invVoxelDim), (tID.z * invVoxelDim));
+	float3 diff = float3(0.5f,0.5f,0.5f) - localPos.xyz;
+	return -(length(diff) - radius);
+}
+float SampleDensityMaps(float3 ws)
+{
+	float density = -ws.y;
+	float3 offset = float3(0.0f, 0.0f, 0.0f);
+
+	// high frequency noise
+
+	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*2.5, 0, offset).x*0.5;
+	density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*5.35, 0, offset).x*0.32;
+	density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*10.25, 0, offset).x*0.50;
+	density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*4.7, 0, offset).x*0.1;
+
+	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*0.06, 0, offset).x*3.25;
+	//density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*8.50;
+	//density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*0.001, 0, offset).x*5.00;
+	density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*16.41;
+
+	return density;
+}
+
+[numthreads(32,32,1)]
+void ComputeDens1 (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+	float invVoxelDim = 1.0f/32.0f;
+	float3 pLocal = id.xyz * invVoxelDim;
+	float3 ws = wsChunkPosLL + (pLocal * wsChunkDim);	// convert from local coordinates to world coordinates
+	float density = SampleDensityMaps(ws);
+	density = SphereDensity(id);
+	uint3 writeCoord = id.xyz;
+	writeCoord.y = 31 - writeCoord.y; 
+    densityTexture[writeCoord.xyz] = density;
+}
+/*
+[numthreads(1,33,1)]
+void ComputeDens1 (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+	float invVoxelDim = 1.0f/32.0f;
+	float3 pLocal = id.xyz * invVoxelDim;
+	float3 ws = wsChunkPosLL + (pLocal * wsChunkDim);	// convert from local coordinates to world coordinates
+	float density = SampleDensityMaps(ws);
+	density = SphereDensity(id);
+	uint3 writeCoord = id.xyz;
+	writeCoord.y = 31 - writeCoord.y; 
+    densityTexture[writeCoord.xyz] = density;
+}
+*/
+
