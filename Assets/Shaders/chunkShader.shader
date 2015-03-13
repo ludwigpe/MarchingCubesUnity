@@ -4,7 +4,9 @@
 	{
 		Pass 
 		{
-			Cull back
+			Cull Back
+			ZWrite On
+			ZTest Less
 
 			CGPROGRAM
 			#include "UnityCG.cginc"
@@ -12,7 +14,6 @@
 			#pragma vertex vert
 			#pragma geometry geo
 			#pragma fragment frag
-			
 
 			struct Tri
 			{

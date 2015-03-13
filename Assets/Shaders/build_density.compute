@@ -3,72 +3,116 @@
 
 // Create a RenderTexture with enableRandomWrite flag and set it
 // with cs.SetTexture
-
+/*
 Texture3D<float4> NoiseVol1;
 Texture3D<float4> NoiseVol2;
 Texture3D<float4> NoiseVol3;
 Texture3D<float4> NoiseVol4;
+*/
+Texture3D<half4> NoiseVol1;
+Texture3D<half4> NoiseVol2;
+Texture3D<half4> NoiseVol3;
+Texture3D<half4> NoiseVol4;
 
 SamplerState samplerNoiseVol1;
+SamplerState _LinearRepeatSampler;
 float invVoxelDim;
 float3 wsChunkPosLL;
-uint3 wsChunkDim;
+float3 wsChunkDim;
+
+float4 noiseColors[16*16*16];
 
 RWTexture3D<float> densityTexture;
+
+float3 threadIdToWorldCoord(uint3 tID)
+{
+
+	// transform from cell coord to local coordinate 0-1 within chunk. (0,0,0) lower-left-front (1,1,1) top-right-back
+	float3 localPos = tID * invVoxelDim;
+	return wsChunkPosLL + (localPos * wsChunkDim);
+
+}
+
+
 float SphereDensity(uint3 tID)
 {
-	float invVoxelDim = 1.0f / 32.0f;
 	float radius = 0.4f;
-	float3 localPos = float3((tID.x * invVoxelDim), (tID.y * invVoxelDim), (tID.z * invVoxelDim));
+	float3 localPos = tID*invVoxelDim;
 	float3 diff = float3(0.5f,0.5f,0.5f) - localPos.xyz;
+
 	return -(length(diff) - radius);
 }
-float SampleDensityMaps(float3 ws)
+
+float CopyDensity(uint3 id)
 {
-	float density = -ws.y;
-	float3 offset = float3(0.0f, 0.0f, 0.0f);
-
-	// high frequency noise
-
-	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*2.5, 0, offset).x*0.5;
-	density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*5.35, 0, offset).x*0.32;
-	density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*10.25, 0, offset).x*0.50;
-	density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*4.7, 0, offset).x*0.1;
-
-	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*0.06, 0, offset).x*3.25;
-	//density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*8.50;
-	//density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*0.001, 0, offset).x*5.00;
-	density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*16.41;
+	float density = 0; 
+	float3 uvw = id * invVoxelDim;
+	float3 ws = threadIdToWorldCoord(id);
+	uvw = ws;
+	density = -ws.y;
+	//density = -uvw.y;
+	density += NoiseVol1.SampleLevel(_LinearRepeatSampler, uvw, 0).x ;
+	//density += NoiseVol2.SampleLevel(_LinearRepeatSampler, uvw, 0).x * 0.02;
+	//density += NoiseVol3.SampleLevel(_LinearRepeatSampler, uvw, 0).x * 5.25;
+	//density += NoiseVol4.SampleLevel(_LinearRepeatSampler, uvw, 0).x * 0.002;
 
 	return density;
 }
 
-[numthreads(32,32,1)]
+float SampleDensityMaps(float3 ws)
+{
+	
+	float density = -ws.y;
+	
+	float3 offset = float3(0.0f, 0.0f, 0.0f);
+
+	// high frequency noise
+
+	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*2.5, 0, offset).x*0.05;
+	//density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*5.35, 0, offset).x*0.32;
+	//density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*10.25, 0, offset).x*0.50;
+	//density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*4.7, 0, offset).x*0.1;
+
+	density += NoiseVol1.SampleLevel(samplerNoiseVol1, ws*0.06, 0, offset).x*1.25;
+	//density += NoiseVol2.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*8.50;
+	//density += NoiseVol3.SampleLevel(samplerNoiseVol1, ws*0.001, 0, offset).x*5.00;
+	//density += NoiseVol4.SampleLevel(samplerNoiseVol1, ws*0.01, 0, offset).x*16.41;
+	
+	
+	return density;
+	/*
+	
+	float density = -ws.y;
+
+
+	// high frequency noise
+
+	density += NoiseVol1.SampleLevel(_LinearRepeatSampler, ws*2.5, 0).x*0.5;
+	density += NoiseVol2.SampleLevel(_LinearRepeatSampler, ws*5.35, 0).x*0.32;
+	density += NoiseVol3.SampleLevel(_LinearRepeatSampler, ws*10.25, 0).x*0.50;
+	density += NoiseVol4.SampleLevel(_LinearRepeatSampler, ws*4.7, 0).x*0.1;
+
+	density += NoiseVol1.SampleLevel(_LinearRepeatSampler, ws*0.06, 0).x*3.25;
+	//density += NoiseVol2.SampleLevel(_LinearRepeatSampler, ws*0.01, 0).x*-8.50;
+	//density += NoiseVol3.SampleLevel(_LinearRepeatSampler, ws*0.001, 0).x*-5.00;
+	density += NoiseVol4.SampleLevel(_LinearRepeatSampler, ws*0.01, 0).x*2.41;
+
+	return density;
+	*/
+}
+
+[numthreads(33,1,1)]
 void ComputeDens1 (uint3 id : SV_DispatchThreadID)
 {
     // TODO: insert actual code here!
-	float invVoxelDim = 1.0f/32.0f;
-	float3 pLocal = id.xyz * invVoxelDim;
-	float3 ws = wsChunkPosLL + (pLocal * wsChunkDim);	// convert from local coordinates to world coordinates
-	float density = SampleDensityMaps(ws);
+	float3 ws = threadIdToWorldCoord(id);
+	float density;
+	//density = SampleDensityMaps(ws);
 	density = SphereDensity(id);
+	//density = CopyDensity(id);
 	uint3 writeCoord = id.xyz;
-	writeCoord.y = 31 - writeCoord.y; 
+	writeCoord.y = 32 - writeCoord.y; 
     densityTexture[writeCoord.xyz] = density;
 }
-/*
-[numthreads(1,33,1)]
-void ComputeDens1 (uint3 id : SV_DispatchThreadID)
-{
-    // TODO: insert actual code here!
-	float invVoxelDim = 1.0f/32.0f;
-	float3 pLocal = id.xyz * invVoxelDim;
-	float3 ws = wsChunkPosLL + (pLocal * wsChunkDim);	// convert from local coordinates to world coordinates
-	float density = SampleDensityMaps(ws);
-	density = SphereDensity(id);
-	uint3 writeCoord = id.xyz;
-	writeCoord.y = 31 - writeCoord.y; 
-    densityTexture[writeCoord.xyz] = density;
-}
-*/
+
 

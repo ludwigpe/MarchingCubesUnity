@@ -4,24 +4,11 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 
-public struct Chunk
-{
-    public Vector3 wsPosLL;
-    public Vector3 wsChunkDim;
-    public int voxelDim;
-
-    public Chunk(Vector3 posLL, Vector3 chunkDim, int voxDim)
-    {
-        this.wsPosLL = posLL;
-        this.wsChunkDim = chunkDim;
-        this.voxelDim = voxDim;
-    }
-}
-
 
 public static class Helper {
 
-
+    private static ComputeBuffer m_caseToNumPolys;
+    private static ComputeBuffer m_triangleConnectionList;
     public static Texture3D LoadVolumeFromFile(string fileName)
     {
         int x, y, z;
@@ -31,7 +18,7 @@ public static class Helper {
         int headerSize = 5 * sizeof(int);
 
         br.ReadBytes(headerSize); // skip header info
-        Texture3D noiseTex = new Texture3D(x, y, z, TextureFormat.ARGB32, true);
+        Texture3D noiseTex = new Texture3D(x, y, z, TextureFormat.RGBA32, true);
         noiseTex.filterMode = FilterMode.Bilinear;
         noiseTex.wrapMode = TextureWrapMode.Repeat;
    
@@ -55,11 +42,15 @@ public static class Helper {
             noiseTex.Apply(false);
 
         }
-        //PrintColors(noiseTex.GetPixels(0));
         br.Close();
         return noiseTex;
     }
-   
+   public static void Finalize()
+    {
+        m_caseToNumPolys.Release();
+        m_triangleConnectionList.Release();
+
+    }
     /// <summary>
     /// Creates the density texture. Create a density texture from the chunks voxel dimensions
     /// Since the chunk will have 1 extra corner we add 1 to the dimension. If a chunk is 32 in width it will have 33 corners
@@ -80,29 +71,43 @@ public static class Helper {
 
     public static ComputeBuffer GetCaseToNumPolyBuffer()
     {
-        ComputeBuffer buff = new ComputeBuffer(256, sizeof(int));
-        buff.SetData(case_to_numpolys);
+        if(m_caseToNumPolys == null)
+        {
+            m_caseToNumPolys =  new ComputeBuffer(256, sizeof(int));
+            m_caseToNumPolys.SetData(case_to_numpolys);
+        }
 
-        return buff;
+        return m_caseToNumPolys;
     }
 
     public static ComputeBuffer GetTriangleConnectionTable()
     {
-        ComputeBuffer buff = new ComputeBuffer(256 * 15, sizeof(int));
-        buff.SetData(triangleConnectionTable);
+        if (m_triangleConnectionList == null)
+        {
+            m_triangleConnectionList = new ComputeBuffer(256 * 15, sizeof(int));
+            m_triangleConnectionList.SetData(triangleConnectionTable);
+        }
 
-        return buff;
+        return m_triangleConnectionList;
+
     }
 
     public static ComputeBuffer GetArgumentBuffer()
     {
-        ComputeBuffer argBuff = new ComputeBuffer(4, sizeof(int), ComputeBufferType.DrawIndirect);
+        ComputeBuffer argBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.DrawIndirect);
         int[] args = new int[] { 0, 1, 0, 0 };
-        argBuff.SetData(args);
+        argBuffer.SetData(args);
+        return argBuffer;
 
-        return argBuff;
     }
 
+    public static ComputeBuffer GetNewTriangleBuffer(int voxelDim)
+    {
+        int maxTriangleCount = voxelDim * voxelDim * voxelDim * 5;
+        int vSize = (sizeof(float) * 3 + sizeof(float) * 3);
+        int triangleSize = 3 * vSize;
+        return new ComputeBuffer(maxTriangleCount, triangleSize, ComputeBufferType.Append);
+    }
     private static Texture2D LoadTexture2DRaw(BinaryReader br, int w, int h)
     {
 

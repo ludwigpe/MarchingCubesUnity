@@ -38,7 +38,6 @@ int voxelDim;
 
 float3 localToWorldCoord(float3 localPos)
 {
-	//return float3(0, 0, 0) + localPos;
 	return wsChunkPosLL + (localPos * wsChunkDim);
 }
 // since our local coords go from (0,0,0) lower-left to (1,1,1) upper-right we must invert the y for texture coordinatse
@@ -92,7 +91,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	int caseNumber = 0;
 	for (int i = 0; i < 8; i++)
 	{
-		half3 sampCoord = localToTextureCoord(localCoords[i]);
+		float3 sampCoord = localToTextureCoord(localCoords[i]);
 		cellDensity[i] = densityTexture.SampleLevel(_LinearClamp, sampCoord, 0);
 		if( cellDensity[i] >= 0) caseNumber |= 1 << i;
 	}
