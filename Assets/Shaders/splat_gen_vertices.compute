@@ -15,7 +15,7 @@ StructuredBuffer<uint> nonemptyList;
 RWBuffer<uint> nonemptyLeft;	// number of cells not processed yet
 RWBuffer<uint> indexCounter;
 Texture3D<float> densityTexture;
-SamplerState _LinearClamp;
+SamplerState _LinearClampSampler;
 
 float invVoxelDim;
 float3 wsChunkPosLL;
@@ -46,9 +46,9 @@ float3 CalculateNormal(float3 uvw)
 	float d;
 	d = invVoxelDim;
 	float3 gradient;
-	gradient.x = densityTexture.SampleLevel(_LinearClamp, uvw + float3(d, 0, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(-d, 0, 0), 0).x;
-	gradient.y = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, d, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, -d, 0), 0).x;
-	gradient.z = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, d), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, -d), 0).x;
+	gradient.x = densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(d, 0, 0), 0).x - densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(-d, 0, 0), 0).x;
+	gradient.y = densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(0, d, 0), 0).x - densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(0, -d, 0), 0).x;
+	gradient.z = densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(0, 0, d), 0).x - densityTexture.SampleLevel(_LinearClampSampler, uvw + float3(0, 0, -d), 0).x;
 
 	return -normalize(gradient);
 }
@@ -83,15 +83,15 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	float3 localCoordLL = (float3)(unpacked_coord * invVoxelDim);
 	float3 uvwLL = localCoordLL;
 	uvwLL.y = 1 - uvwLL.y;
-	float densityV0 = densityTexture.SampleLevel(_LinearClamp, uvwLL, 0);
+	float densityV0 = densityTexture.SampleLevel(_LinearClampSampler, uvwLL, 0);
 
 	int3 vertexIndices = int3(-1,-1,-1);
 	if (build_vert_on_edge.x != 0) // should we build vertex on edge 3?
 	{
 		float3 offset = float3(invVoxelDim, 0, 0);
 		float3 localCoordV3 = localCoordLL + offset; // v3 - lower right
-		float3 uvwV3 = uvwLL + offset;
-		float densityV3 = densityTexture.SampleLevel(_LinearClamp, uvwV3, 0);
+		float3 uvwV3 = localToTextureCoord(localCoordV3);
+		float densityV3 = densityTexture.SampleLevel(_LinearClampSampler, uvwV3, 0);
 		float3 pLocal = CalculateVertex(localCoordLL, localCoordV3, densityV0, densityV3);
 		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
 		normal.y *= -1;
@@ -109,8 +109,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	{
 		float3 offset = float3(0, invVoxelDim, 0);
 		float3 localCoordV1 = localCoordLL + offset; // v1 - upper left
-		float3 uvwV1 = uvwLL + offset;
-		float densityV1 = densityTexture.SampleLevel(_LinearClamp, uvwV1, 0);
+		float3 uvwV1 = localToTextureCoord(localCoordV1);
+		float densityV1 = densityTexture.SampleLevel(_LinearClampSampler, uvwV1, 0);
 		float3 pLocal = CalculateVertex(localCoordLL, localCoordV1, densityV0, densityV1);
 		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
 		normal.y *= -1;
@@ -128,8 +128,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	{
 		float3 offset = float3(0, 0, invVoxelDim);
 		float3 localCoordV4 = localCoordLL + offset; // v4 - lower back left
-		float3 uvwV4 = uvwLL + offset;
-		float densityV4 = densityTexture.SampleLevel(_LinearClamp, uvwV4, 0);
+		float3 uvwV4 = localToTextureCoord(localCoordV4);
+		float densityV4 = densityTexture.SampleLevel(_LinearClampSampler, uvwV4, 0);
 		float3 pLocal = CalculateVertex(localCoordLL, localCoordV4, densityV0, densityV4);
 		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
 		normal.y *= -1;

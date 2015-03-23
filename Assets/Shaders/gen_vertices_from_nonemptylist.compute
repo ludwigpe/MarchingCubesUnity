@@ -82,9 +82,6 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	unpacked_coord.y = (z8_y8_x8_case8 >> 16) & 0xFF;
 	unpacked_coord.z = (z8_y8_x8_case8 >> 24) & 0xFF;
 
-	if(unpacked_coord.x >= 32 || unpacked_coord.y >= 32 || unpacked_coord.z >= 32)
-		return;
-
 	float cellDensity[8];	// density values at each corner of the voxel/cell (local to each thread)
 	float3 localCoords[8];	// local coordinates for each corner within the chunk (local to each thread)
 	
@@ -108,6 +105,8 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
 	int numPolys = 0;
 	numPolys = case_to_numpolys[caseNumber];
+	if(unpacked_coord.x >= 32 || unpacked_coord.y >= 32 || unpacked_coord.z >= 32)
+		numPolys = 0;
 	for (int n = 0; n < numPolys; n++)
 	{
 

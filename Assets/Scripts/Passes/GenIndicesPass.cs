@@ -39,11 +39,15 @@ public class GenIndicesPass : BasePass {
 
         indexCounterBuffer.GetData(data);
         chunk.indexCount = data[0];
-       // Debug.Log("IndexCount: " + chunk.indexCount);
+        ///Debug.Log("IndexCount: " + chunk.indexCount);
         //int[] indices = new int[chunk.indexCount];
         //chunk.indexBuffer.GetData(indices);
-        //foreach(int i in indices)
+        //foreach (int i in indices)
         //{
+        //    if(i >= chunk.vertexCount)
+        //    {
+        //        Debug.LogError("Index out of bounds: " + i);
+        //    }
         //    Debug.Log(i);
         //}
         return true;
