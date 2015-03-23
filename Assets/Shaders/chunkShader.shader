@@ -5,8 +5,7 @@
 		Pass 
 		{
 			Cull Back
-			ZWrite On
-			ZTest Less
+
 
 			CGPROGRAM
 			#include "UnityCG.cginc"
@@ -14,7 +13,8 @@
 			#pragma vertex vert
 			#pragma geometry geo
 			#pragma fragment frag
-
+			//uniform float3 _wsChunkPosLL;
+			//uniform float3 _wsChunkDim;
 			struct Tri
 			{
 				float3 wsPos1 : POS1;  
@@ -43,15 +43,17 @@
 			{
 				g2f OUT;
 				Tri inputTri = input[0];
-
+				//inputTri.wsPos1.xyz = _wsChunkPosLL + (inputTri.wsPos1.xyz * _wsChunkDim);
 				OUT.pos = mul(UNITY_MATRIX_VP, float4(inputTri.wsPos1.xyz, 1));
 				OUT.normal = inputTri.wsNormal1;
 				Stream.Append(OUT);
 
+				//inputTri.wsPos2.xyz = _wsChunkPosLL + (inputTri.wsPos2.xyz * _wsChunkDim);
 				OUT.pos = mul(UNITY_MATRIX_VP, float4(inputTri.wsPos2.xyz, 1));
 				OUT.normal = inputTri.wsNormal2;
 				Stream.Append(OUT);
 
+				//inputTri.wsPos3.xyz = _wsChunkPosLL + (inputTri.wsPos3.xyz * _wsChunkDim);
 				OUT.pos = mul(UNITY_MATRIX_VP, float4(inputTri.wsPos3.xyz, 1));
 				OUT.normal = inputTri.wsNormal3;
 				Stream.Append(OUT);

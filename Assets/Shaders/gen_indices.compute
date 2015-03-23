@@ -1,0 +1,74 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+static uint4 edge_to_cell[12] = 
+{
+	uint4(0,0,0,1), // e0 = this.y
+	uint4(0,1,0,0), // e1 = above.x
+	uint4(1,0,0,1), // e2 = right.y
+	uint4(0,0,0,0), // e3 = this.x
+	uint4(0,0,1,1), // e4 = back.y
+	uint4(0,1,1,0), // e5 = above_back.x
+	uint4(1,0,1,1), // e6 = right_back.y
+	uint4(0,0,1,0), // e7 = back.x
+	uint4(0,0,0,2), // e8 = this.z
+	uint4(0,1,0,2), // e9 = above.z
+	uint4(1,1,0,2), // e10 = above_right.z
+	uint4(1,0,0,2), // e11 = right.z
+};
+Texture3D<int3> VertexIDVol;
+SamplerState _LinearClamp;
+StructuredBuffer<uint> nonemptyList;
+RWBuffer<uint> nonemptyLeft;	// number of cells not processed yet
+RWStructuredBuffer<int> indexBuffer;
+RWBuffer<uint> indexCounter;
+StructuredBuffer<int> case_to_numpolys;
+StructuredBuffer<int> edge_connect_list;
+/*
+float invVoxelDim;
+float3 wsChunkPosLL;
+float3 wsChunkDim;
+*/
+[numthreads(4,4,4)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	uint listIndex = -1;
+	InterlockedAdd(nonemptyLeft[0], -1, listIndex);
+	if(listIndex < 0)
+		return;
+	uint z8_y8_x8_case8 = nonemptyList[listIndex];
+	int caseNumber = (int)(z8_y8_x8_case8 & 0xFF);
+	uint3 unpacked_coord;
+	unpacked_coord.x = (z8_y8_x8_case8 >>  8) & 0xFF;
+	unpacked_coord.y = (z8_y8_x8_case8 >> 16) & 0xFF;
+	unpacked_coord.z = (z8_y8_x8_case8 >> 24) & 0xFF;
+	if(unpacked_coord.x >= 32 || unpacked_coord.y >= 32 || unpacked_coord.z >= 32)
+		return;
+	int numPolys = 0;
+	numPolys = case_to_numpolys[caseNumber];
+	uint index = -1;
+	// get start index from indexCounter and then add 3 * numpolys, since we will add 3 indices per polygon generated into the indexbuffer
+	InterlockedAdd(indexCounter[0], numPolys*3, index);
+	uint3 sampleCellCoord;
+	for (int n = 0; n < numPolys; n++)
+	{
+
+		
+		for (int e = 0; e < 3; e++)
+		{
+			
+			// The starting line from the connection list
+			// offset within line, stride 3 edges for each polygon. Max index  = 255 * 15 + 4*3 + 2 = 3839
+			
+			int edgeNum = edge_connect_list[caseNumber*15 + (3*n+e)];
+			uint3 offsetCellCoord = edge_to_cell[edgeNum].xyz;
+			uint xyz = edge_to_cell[edgeNum].w;// the 4th component tells us which component in the loaded splat index to look at
+			sampleCellCoord = unpacked_coord + offsetCellCoord;
+			uint vertexIndex = VertexIDVol.Load(int4(sampleCellCoord, 0))[xyz];
+			indexBuffer[index] = vertexIndex;
+			index++;
+			
+		}
+
+	}	
+}

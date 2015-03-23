@@ -1,0 +1,148 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+struct myVertex{
+	float3 vertPos;
+	float3 vertNormal;
+};
+
+// this texture holds indices to the different vertices created on edges 3,0,8 at some cell.
+// Example VertexIDVol[cellCoord.xyz].x = vertexIndexEdge3
+// Example VertexIDVol[cellCoord.xyz].y = vertexIndexEdge0
+// Example VertexIDVol[cellCoord.xyz].z = vertexIndexEdge8
+RWTexture3D<int3> VertexIDVol;
+RWStructuredBuffer<myVertex> vertexBuffer;
+StructuredBuffer<uint> nonemptyList;
+RWBuffer<uint> nonemptyLeft;	// number of cells not processed yet
+RWBuffer<uint> indexCounter;
+Texture3D<float> densityTexture;
+SamplerState _LinearClamp;
+
+float invVoxelDim;
+float3 wsChunkPosLL;
+float3 wsChunkDim;
+
+float3 localToWorldCoord(float3 localPos)
+{
+	return wsChunkPosLL + (localPos * wsChunkDim);
+}
+// since our local coords go from (0,0,0) lower-left to (1,1,1) upper-right we must invert the y for texture coordinatse
+float3 localToTextureCoord(float3 localCoord)
+{
+	localCoord.y = 1-localCoord.y;
+	return localCoord;
+}
+
+// This function interpolates a vertex position between p1 and p2 with density values d1 and d2 respectivly
+float3 CalculateVertex(float3 p1, float3 p2, float d1, float d2)
+{
+	float3 dir = (p2 - p1);
+	float s = -d1 / (d2 - d1);
+	return p1 + s*dir;
+
+}
+
+float3 CalculateNormal(float3 uvw)
+{
+	float d;
+	d = invVoxelDim;
+	float3 gradient;
+	gradient.x = densityTexture.SampleLevel(_LinearClamp, uvw + float3(d, 0, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(-d, 0, 0), 0).x;
+	gradient.y = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, d, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, -d, 0), 0).x;
+	gradient.z = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, d), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, -d), 0).x;
+
+	return -normalize(gradient);
+}
+
+
+[numthreads(4,4,4)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	uint listIndex = -1;
+	InterlockedAdd(nonemptyLeft[0], -1, listIndex);
+	if(listIndex < 0)
+		return;
+	uint z8_y8_x8_case8 = nonemptyList[listIndex];
+	int caseNumber = (int)(z8_y8_x8_case8 & 0xFF);
+	uint3 unpacked_coord;
+	unpacked_coord.x = (z8_y8_x8_case8 >>  8) & 0xFF;
+	unpacked_coord.y = (z8_y8_x8_case8 >> 16) & 0xFF;
+	unpacked_coord.z = (z8_y8_x8_case8 >> 24) & 0xFF;
+
+	// extract bits 0,3,1 and 4 to see which are inside and outside the volume.
+	int  bit0 = (caseNumber     ) & 1;
+	int  bit3 = (caseNumber >> 3) & 1;
+	int  bit1 = (caseNumber >> 1) & 1;
+	int  bit4 = (caseNumber >> 4) & 1;
+	// since all edges that we are interested in go out from corner 0 we check
+	// if vertex 3,1,4 are different from vertex 0. If they are we should build a vertex on that edge
+	int3 build_vert_on_edge = abs( int3(bit3,bit1,bit4) - bit0.xxx );
+	int numVerts = build_vert_on_edge.x + build_vert_on_edge.y + build_vert_on_edge.z;
+	uint index = 0;
+	// index is the startIndex for the vertices we are about to generate.
+	InterlockedAdd(indexCounter[0], numVerts, index);
+	float3 localCoordLL = (float3)(unpacked_coord * invVoxelDim);
+	float3 uvwLL = localCoordLL;
+	uvwLL.y = 1 - uvwLL.y;
+	float densityV0 = densityTexture.SampleLevel(_LinearClamp, uvwLL, 0);
+
+	int3 vertexIndices = int3(-1,-1,-1);
+	if (build_vert_on_edge.x != 0) // should we build vertex on edge 3?
+	{
+		float3 offset = float3(invVoxelDim, 0, 0);
+		float3 localCoordV3 = localCoordLL + offset; // v3 - lower right
+		float3 uvwV3 = uvwLL + offset;
+		float densityV3 = densityTexture.SampleLevel(_LinearClamp, uvwV3, 0);
+		float3 pLocal = CalculateVertex(localCoordLL, localCoordV3, densityV0, densityV3);
+		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
+		normal.y *= -1;
+			
+		// convert from local to world coordinates
+		myVertex vert;
+		vert.vertPos = localToWorldCoord(pLocal);
+		//vert.vertPos = pLocal;
+		vert.vertNormal = normal;
+		vertexBuffer[index] = vert;
+		vertexIndices.x = index;
+		index++;
+	}
+	if (build_vert_on_edge.y != 0) // should we build vertex on edge 0?
+	{
+		float3 offset = float3(0, invVoxelDim, 0);
+		float3 localCoordV1 = localCoordLL + offset; // v1 - upper left
+		float3 uvwV1 = uvwLL + offset;
+		float densityV1 = densityTexture.SampleLevel(_LinearClamp, uvwV1, 0);
+		float3 pLocal = CalculateVertex(localCoordLL, localCoordV1, densityV0, densityV1);
+		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
+		normal.y *= -1;
+			
+		// convert from local to world coordinates
+		myVertex vert;
+		vert.vertPos = localToWorldCoord(pLocal);
+		//vert.vertPos = pLocal;
+		vert.vertNormal = normal;
+		vertexBuffer[index] = vert;
+		vertexIndices.y = index;
+		index++;
+	}
+	if (build_vert_on_edge.z != 0) // should we build vertex on edge 8?
+	{
+		float3 offset = float3(0, 0, invVoxelDim);
+		float3 localCoordV4 = localCoordLL + offset; // v4 - lower back left
+		float3 uvwV4 = uvwLL + offset;
+		float densityV4 = densityTexture.SampleLevel(_LinearClamp, uvwV4, 0);
+		float3 pLocal = CalculateVertex(localCoordLL, localCoordV4, densityV0, densityV4);
+		float3 normal = CalculateNormal(localToTextureCoord(pLocal));
+		normal.y *= -1;
+			
+		// convert from local to world coordinates
+		myVertex vert;
+		vert.vertPos = localToWorldCoord(pLocal);
+		//vert.vertPos = pLocal;
+		vert.vertNormal = normal;
+		vertexBuffer[index] = vert;
+		vertexIndices.z = index;
+		index++;
+	}
+	
+	VertexIDVol[unpacked_coord.xyz] = vertexIndices;				
+}

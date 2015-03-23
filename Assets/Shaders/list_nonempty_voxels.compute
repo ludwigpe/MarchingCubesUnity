@@ -1,0 +1,54 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+RWStructuredBuffer<uint> nonemptyList;
+RWBuffer<uint> indexCounter;
+Texture3D<float> densityTexture;
+SamplerState _LinearClamp;
+
+float invVoxelDim;
+float3 localToTextureCoord(float3 localCoord)
+{
+	
+	float3 uvw = localCoord;
+	uvw.y = 1 - uvw.y;
+	return uvw;
+}
+[numthreads(33,1,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+	float cellDensity[8];	// density values at each corner of the voxel/cell (local to each thread)
+	float3 localCoords[8];	// local coordinates for each corner within the chunk (local to each thread)
+	
+	// lower left corners local coordinate
+	float3 localCoordLL = (float3)(id * invVoxelDim);
+	localCoords[0] = localCoordLL;											// v0 - lower left
+	localCoords[1] = localCoordLL + float3(0, invVoxelDim, 0);				// v1 - upper left
+	localCoords[2] = localCoordLL + float3(invVoxelDim, invVoxelDim, 0);	// v2 - upper right
+	localCoords[3] = localCoordLL + float3(invVoxelDim, 0, 0);				// v3 - lower right
+
+	localCoords[4] = localCoordLL + float3(0, 0, invVoxelDim);						// v4 - lower back left
+	localCoords[5] = localCoordLL + float3(0, invVoxelDim, invVoxelDim);			// v5 - upper back left
+	localCoords[6] = localCoordLL + float3(invVoxelDim, invVoxelDim, invVoxelDim);	// v6 - upper back right
+	localCoords[7] = localCoordLL + float3(invVoxelDim, 0, invVoxelDim);			// v7 - lower back right
+
+	int caseNumber = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		float3 sampCoord = localToTextureCoord(localCoords[i]);
+		cellDensity[i] = densityTexture.SampleLevel(_LinearClamp, sampCoord, 0);
+		if( cellDensity[i] >= 0) caseNumber |= 1 << i;
+	}
+	// make sure caseNumber is not 0 or 255
+	if (caseNumber * (255-caseNumber) > 0)
+	{
+		uint index = 0;
+		InterlockedAdd(indexCounter[0], 1, index);
+		uint z8_y8_x8_case8 = (id.z << 24) |
+                       (id.y << 16) |
+                       (id.x <<  8) |
+                       (caseNumber         );
+		nonemptyList[index] = z8_y8_x8_case8;
+	}
+}

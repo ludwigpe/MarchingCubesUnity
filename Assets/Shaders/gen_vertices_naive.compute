@@ -1,0 +1,151 @@
+﻿
+#pragma kernel CSMain
+// this struct might have to be multiple of 16 bytes for DX11
+struct myVertex{
+	float3 vertPos;
+	float3 vertNormal;
+};
+
+struct myTriangle{
+	float3 wsPos1;  
+    float3 wsNormal1;  
+    float3 wsPos2;  
+    float3 wsNormal2;  
+    float3 wsPos3;  
+    float3 wsNormal3; 
+};
+
+
+static int2 edge_list[12] =
+{
+    int2(0,1), int2(1,2), int2(2,3), int2(3,0), int2(4,5), int2(5,6), int2(6,7), int2(7,4), int2(0,4), int2(1,5), int2(2,6), int2(3,7)
+};
+
+RWStructuredBuffer<myTriangle> triangleBuffer;
+StructuredBuffer<int> case_to_numpolys;
+StructuredBuffer<int> edge_connect_list;
+
+Texture3D<float> densityTexture;
+SamplerState _LinearClamp;
+
+float invVoxelDim;
+float3 wsChunkPosLL;
+float3 wsChunkDim;
+int voxelDim;
+
+
+float3 localToWorldCoord(float3 localPos)
+{
+	return wsChunkPosLL + (localPos * wsChunkDim);
+}
+// since our local coords go from (0,0,0) lower-left to (1,1,1) upper-right we must invert the y for texture coordinatse
+float3 localToTextureCoord(float3 localCoord)
+{
+	localCoord.y = 1-localCoord.y;
+	return localCoord;
+}
+
+// This function interpolates a vertex position between p1 and p2 with density values d1 and d2 respectivly
+float3 CalculateVertex(float3 p1, float3 p2, float d1, float d2)
+{
+	float3 dir = (p2 - p1);
+	float s = -d1 / (d2 - d1);
+	return p1 + s*dir;
+
+}
+
+float3 CalculateNormal(float3 uvw)
+{
+	float d;
+	d = invVoxelDim;
+	float3 gradient;
+	gradient.x = densityTexture.SampleLevel(_LinearClamp, uvw + float3(d, 0, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(-d, 0, 0), 0).x;
+	gradient.y = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, d, 0), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, -d, 0), 0).x;
+	gradient.z = densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, d), 0).x - densityTexture.SampleLevel(_LinearClamp, uvw + float3(0, 0, -d), 0).x;
+
+	return -normalize(gradient);
+}
+
+[numthreads(4,4,4)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // TODO: insert actual code here!
+	float cellDensity[8];	// density values at each corner of the voxel/cell (local to each thread)
+	float3 localCoords[8];	// local coordinates for each corner within the chunk (local to each thread)
+	
+	// lower left corners local coordinate
+	float3 localCoordLL = (float3)(id * invVoxelDim);
+	localCoords[0] = localCoordLL;											// v0 - lower left
+	localCoords[1] = localCoordLL + float3(0, invVoxelDim, 0);				// v1 - upper left
+	localCoords[2] = localCoordLL + float3(invVoxelDim, invVoxelDim, 0);	// v2 - upper right
+	localCoords[3] = localCoordLL + float3(invVoxelDim, 0, 0);				// v3 - lower right
+
+	localCoords[4] = localCoordLL + float3(0, 0, invVoxelDim);						// v4 - lower back left
+	localCoords[5] = localCoordLL + float3(0, invVoxelDim, invVoxelDim);			// v5 - upper back left
+	localCoords[6] = localCoordLL + float3(invVoxelDim, invVoxelDim, invVoxelDim);	// v6 - upper back right
+	localCoords[7] = localCoordLL + float3(invVoxelDim, 0, invVoxelDim);			// v7 - lower back right
+
+	int caseNumber = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		float3 sampCoord = localToTextureCoord(localCoords[i]);
+		cellDensity[i] = densityTexture.SampleLevel(_LinearClamp, sampCoord, 0);
+		if( cellDensity[i] >= 0) caseNumber |= 1 << i;
+	}
+
+	int numPolys = 0;
+	numPolys = case_to_numpolys[caseNumber];
+	for (int n = 0; n < numPolys; n++)
+	{
+		//int3 edges = edge_connect_list[caseNumber][n];
+		myVertex verts[3];
+		// go through the three edges that has been cut and calculate a vertex position for where it was cut
+		for (int e = 0; e < 3; e++)
+		{
+			
+			// The starting line from the connection list
+			// offset within line, stride 3 edges for each polygon. Max index  = 255 * 15 + 4*3 + 2 = 3839
+			
+			int edgeNum = edge_connect_list[caseNumber*15 + (3*n+e)];
+			int v1 = edge_list[edgeNum].x; // get the vertices connected by the edge
+			int v2 = edge_list[edgeNum].y;
+			
+			/*
+			int edgeNum = edges[e]; // get the edge that was cut
+			int v1 = edge_list[edgeNum].x; // get the vertices connected by the edge
+			int v2 = edge_list[edgeNum].y;
+			*/
+
+			// get local position of the vertices 
+			float3 p1Local = localCoords[v1];
+			float3 p2Local = localCoords[v2];
+		
+			// linearly interpolate vertex between p1 and p2
+			float3 pLocal = CalculateVertex(p1Local, p2Local, cellDensity[v1], cellDensity[v2]);
+			float3 normal = CalculateNormal(localToTextureCoord(pLocal));
+			normal.y *= -1;
+			
+			// convert from local to world coordinates
+			myVertex vert;
+			vert.vertPos = localToWorldCoord(pLocal);
+			//vert.vertPos = pLocal;
+			vert.vertNormal = normal;
+			verts[e] = vert;
+
+			
+		}
+		myTriangle t;
+		t.wsPos1 = verts[0].vertPos.xyz;
+		t.wsPos2 = verts[1].vertPos.xyz;
+		t.wsPos3 = verts[2].vertPos.xyz;
+
+		t.wsNormal1 = verts[0].vertNormal.xyz;
+		t.wsNormal2 = verts[1].vertNormal.xyz;
+		t.wsNormal3 = verts[2].vertNormal.xyz;
+		 int idx = id.x + id.y * 32 + id.z * 32 * 32;
+		triangleBuffer[idx * 5 + n] = t;
+		//triBuffer.Append(t);
+
+	}	
+}
+

@@ -9,6 +9,31 @@ public static class Helper {
 
     private static ComputeBuffer m_caseToNumPolys;
     private static ComputeBuffer m_triangleConnectionList;
+    public static Texture3D LoadVolumeFromFile(string fileName, TextureFormat format, int elementSize ,int width, int height, int depth)
+    {
+        BinaryReader br = new BinaryReader(File.Open(fileName, FileMode.Open, FileAccess.Read));
+        Texture3D noiseTex = new Texture3D(width, height, depth, TextureFormat.RGBA32, false);
+        noiseTex.filterMode = FilterMode.Bilinear;
+        noiseTex.wrapMode = TextureWrapMode.Repeat;
+
+        int numElements = width * height * depth;
+        List<Color> colors = new List<Color>(numElements);
+
+
+        // Get pixels from 2d texture for each slize in z direction
+        for (int z = 0; z < depth; z++)
+        {
+            Texture2D tex2d = LoadTexture2DRaw(br, width, height, format, elementSize);
+            colors.AddRange(tex2d.GetPixels());
+        }
+        //colors should now be filled with all pixels
+        noiseTex.SetPixels(colors.ToArray());
+        noiseTex.Apply(false);
+
+        br.Close();
+        return noiseTex;
+   
+    }
     public static Texture3D LoadVolumeFromFile(string fileName)
     {
         int x, y, z;
@@ -47,8 +72,10 @@ public static class Helper {
     }
    public static void Finalize()
     {
-        m_caseToNumPolys.Release();
-        m_triangleConnectionList.Release();
+       if(m_caseToNumPolys != null)
+            m_caseToNumPolys.Release();
+       if(m_triangleConnectionList != null)
+            m_triangleConnectionList.Release();
 
     }
     /// <summary>
@@ -107,6 +134,22 @@ public static class Helper {
         int vSize = (sizeof(float) * 3 + sizeof(float) * 3);
         int triangleSize = 3 * vSize;
         return new ComputeBuffer(maxTriangleCount, triangleSize, ComputeBufferType.Append);
+    }
+
+    private static Texture2D LoadTexture2DRaw(BinaryReader br, int w, int h, TextureFormat format, int elementSize)
+    {
+
+        Texture2D tex = new Texture2D(w, h, format, false);
+        tex.wrapMode = TextureWrapMode.Repeat;
+        tex.filterMode = FilterMode.Bilinear;
+        int dataSize = w * h * elementSize;
+        byte[] data = new byte[dataSize];
+        br.Read(data, 0, dataSize);
+
+        tex.LoadRawTextureData(data);
+        tex.Apply(false);
+
+        return tex;
     }
     private static Texture2D LoadTexture2DRaw(BinaryReader br, int w, int h)
     {

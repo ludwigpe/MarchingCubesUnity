@@ -6,48 +6,94 @@ using System.Collections.Generic;
 
 public class BuildDensityMap : MonoBehaviour
 {
+    public enum Passes { NAIVE, APPENDING, NONEMPTY, INDICES, MEDICAL};
+    public bool DEBUG = true;
+    public Passes m_chosenPass;
     const int SIZE = 32 * 32 * 32 * 5 * 3;
-	Chunk testChunk;
-
-    public ComputeShader m_buildDensityShader, m_genVerticesShader;
 	public Material m_chunkMat;
-	public bool DEBUG = true;
-	private Texture3D[] m_noiseVols = new Texture3D[4];
+    public Material m_chunkMeshMat;
+    public Vector3 m_numberOfChunks = new Vector3(1, 1, 1);
+    public int m_chunkDim;
+
+    private Texture3D m_medicalVol;
     private RenderTexture m_densityTexture;
 
     private List<Chunk> m_chunkList;
-    public Vector3 m_numberOfChunks = new Vector3(1,1,1);
+    private BasePass[] m_passes;
+
 	// Use this for initialization
 	void Start () 
     {
+      
         int numChunksTotal = (int)(m_numberOfChunks.x * m_numberOfChunks.y * m_numberOfChunks.z);
         m_chunkList = new List<Chunk>(numChunksTotal);
+        switch(m_chosenPass)
+        {
+            case Passes.NAIVE:
+                m_passes = new BasePass[2];
+                m_passes[0] = new BuildDensityPass();
+                m_passes[1] = new NaiveGenVerticesPass();
+                break;
+            case Passes.APPENDING:
+                m_passes = new BasePass[3];
+                m_passes[0] = new BuildDensityPass();
+                m_passes[1] = new ListNonemptyCellsPass();
+                m_passes[2] = new AppendGenVerticesPass();
+                break;
+            case Passes.NONEMPTY:
+                m_passes = new BasePass[3];
+                m_passes[0] = new BuildDensityPass();
+                m_passes[1] = new ListNonemptyCellsPass();
+                m_passes[2] = new NonemptyGenVerticesPass();
+                break;
+            case Passes.MEDICAL:
+                m_passes = new BasePass[3];
+                m_passes[0] = new BuildDensityMedicalPass();
+                m_passes[1] = new ListNonemptyCellsPass();
+                m_passes[2] = new AppendGenVerticesPass();
+                break;
+            case Passes.INDICES:
+                m_passes = new BasePass[4];
+                m_passes[0] = new BuildDensityPass();
+                m_passes[1] = new ListNonemptyCellsPass();
+                m_passes[2] = new SplatGenVerticesPass();
+                m_passes[3] = new GenIndicesPass();
+                break;
+        }
 
-		//testChunk = new Chunk(new Vector3 (0, 0, 0), new Vector3 (10, 10, 10), 32 );
-        //testChunk.chunkMat = m_chunkMat;
-
-		// Load all volume files into Texture3D format for use in shaders
-        m_noiseVols[0] = Helper.LoadVolumeFromFile("Assets/Textures/noiseVol1.vol");
-        m_noiseVols[1] = Helper.LoadVolumeFromFile("Assets/Textures/noiseVol2.vol");
-        m_noiseVols[2] = Helper.LoadVolumeFromFile("Assets/Textures/noiseVol3.vol");
-        m_noiseVols[3] = Helper.LoadVolumeFromFile("Assets/Textures/noiseVol4.vol");
         m_densityTexture = Helper.CreateDensityTexture(32);
+
+        float startTime = Time.realtimeSinceStartup;
         CreateChunks();
-		//BuildChunk ( testChunk);
+        //if ((m_chosenPass == Passes.APPENDING || m_chosenPass == Passes.NONEMPTY) && m_chunkList.Count > 1)
+        //{
+        //    int prev = m_chunkList[0].triangleCount;
+        //    for (int i = 1; i < m_chunkList.Count; i++)
+        //    {
+        //        int temp = m_chunkList[i].triangleCount;
+        //        m_chunkList[i].triangleCount = prev;
+        //        prev = temp;
+        //    }
+        //    m_chunkList[0].triangleCount = prev;
+        //}
+        float endTime = Time.realtimeSinceStartup;
+        print("Creation time: " + (float)(endTime - startTime));    
+        if (DEBUG)
+        {
+            print("Number of chunks generated: " + m_chunkList.Count);
+        }
+        
 	
 	}
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
 	void OnPostRender ()
 	{
-        foreach(Chunk c in m_chunkList)
-        {
-            c.Draw();
-        }
+        
+        //foreach (Chunk c in m_chunkList)
+        //{
+
+        //    c.Draw();
+        //}
            
 	}
 
@@ -58,12 +104,16 @@ public class BuildDensityMap : MonoBehaviour
                 for(int x = 0; x < m_numberOfChunks.x; x++)
                 {
                     Vector3 pos = new Vector3(x, y, z);
-                    Vector3 chunkDim = new Vector3(2, 2, 2);
-                    pos *= chunkDim.x;
+                    Vector3 chunkDim = new Vector3(m_chunkDim, m_chunkDim, m_chunkDim);
+                    pos *= m_chunkDim;
                     Chunk c = new Chunk(pos, chunkDim, 32);
                     c.chunkMatProcedural = m_chunkMat;
-                    BuildChunk(c);
-                    m_chunkList.Add(c);
+                    c.chunkMatMesh = m_chunkMeshMat;
+                    if (BuildChunk(ref c))
+                        m_chunkList.Add(c);
+                    else
+                        c.Release();
+                    
                 }
     }
 	/// <summary>
@@ -71,12 +121,19 @@ public class BuildDensityMap : MonoBehaviour
 	/// </summary>
 	/// <param name="vertexBuffer">Vertex buffer.</param>
 	/// <param name="chunk">Chunk.</param>
-	void BuildChunk(Chunk chunk)
+	bool BuildChunk(ref Chunk chunk)
 	{
 
-		BuildDensity (chunk);
-		BuildVertices (chunk);
-       // m_densityTexture.Release();
+        foreach (BasePass pass in m_passes)
+        {
+            if (!(pass.DoPass(ref chunk, ref m_densityTexture)))
+                return false;
+        }
+        if (m_chosenPass == Passes.INDICES)
+            chunk.GenerateChunkIndexed();
+        else
+            chunk.GenerateChunkObject();
+        return true ;
 
 	}
 
@@ -84,63 +141,6 @@ public class BuildDensityMap : MonoBehaviour
 	/// Builds the density texture for a chunk in world space.
 	/// </summary>
 	/// <param name="chunk">Chunk.</param>
-	void BuildDensity(Chunk chunk)
-	{
-		// create the density texture
-        
-        
-
-		// set all noiseTextures 
-		m_buildDensityShader.SetTexture(0, "NoiseVol1", m_noiseVols[0]);
-		m_buildDensityShader.SetTexture(0, "NoiseVol2", m_noiseVols[1]);
-		m_buildDensityShader.SetTexture(0, "NoiseVol3", m_noiseVols[2]);
-		m_buildDensityShader.SetTexture(0, "NoiseVol4", m_noiseVols[3]);
-
-		// set the density texture where the comp shader will write to
-		m_buildDensityShader.SetTexture (0, "densityTexture", m_densityTexture);
-
-		// set extra values for computation
-        float invVoxelDim = 1.0f / ((float)chunk.voxelDim);
-        m_buildDensityShader.SetFloat("invVoxelDim", invVoxelDim);
-		m_buildDensityShader.SetVector("wsChunkPosLL", chunk.wsPosLL);
-		m_buildDensityShader.SetVector("wsChunkDim", chunk.wsChunkDim);
-
-        m_buildDensityShader.Dispatch(0, 1, 33, 33);
-
-	}
-
-
-	void BuildVertices( Chunk chunk)
-	{
-
-		m_genVerticesShader.SetTexture (0, "densityTexture", m_densityTexture);
-        m_genVerticesShader.SetBuffer(0, "case_to_numpolys", Helper.GetCaseToNumPolyBuffer());
-        m_genVerticesShader.SetBuffer(0, "edge_connect_list", Helper.GetTriangleConnectionTable());
-        m_genVerticesShader.SetBuffer(0, "triBuffer", chunk.triangleBuffer);
-
-		float invVoxelDim = 1.0f / ((float)chunk.voxelDim);
-		m_genVerticesShader.SetFloat ("invVoxelDim", invVoxelDim);
-		m_genVerticesShader.SetVector("wsChunkPosLL", chunk.wsPosLL);
-		m_genVerticesShader.SetVector("wsChunkDim", chunk.wsChunkDim);
-        m_genVerticesShader.SetInt("voxelDim", chunk.voxelDim);
-		int N = chunk.voxelDim;
-		m_genVerticesShader.Dispatch (0, N/4, N/4, N/4);
-
-        ComputeBuffer.CopyCount(chunk.triangleBuffer, chunk.argumentBuffer, 0);
-
-		if (DEBUG) 
-		{
-			int[] args = new int[]{ 0, 1, 0, 0 };
-            chunk.argumentBuffer.GetData(args);
-			Debug.Log("vertex count " + args[0]);
-			Debug.Log("instance count " + args[1]);
-			Debug.Log("start vertex " + args[2]);
-			Debug.Log("start instance " + args[3]);
-            
-		}
-        
-
-	}
 
 	void PrintColors(Color[] colors)
 	{
@@ -156,7 +156,8 @@ public class BuildDensityMap : MonoBehaviour
     }
     void OnDestroy()
     {
-        //testChunk.Release();
+        foreach (BasePass pass in m_passes)
+            pass.Release();
         foreach (Chunk c in m_chunkList)
         {
             c.Release();
