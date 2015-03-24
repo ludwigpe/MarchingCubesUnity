@@ -1,5 +1,7 @@
 ﻿using UnityEngine;
+#if UNITY_EDITOR
 using UnityEditor;
+#endif
 using System;
 using System.IO;
 using System.Collections;
@@ -15,6 +17,8 @@ public abstract class BasePass
     }
     public void LoadComputeShader(string path)
     {
-        computeShader = AssetDatabase.LoadMainAssetAtPath(path) as ComputeShader;
+        #if UNITY_EDITOR
+            computeShader = AssetDatabase.LoadMainAssetAtPath(path) as ComputeShader;
+        #endif
     }
 }

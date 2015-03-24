@@ -20,7 +20,11 @@ public class BuildDensityMap : MonoBehaviour
 
     private List<Chunk> m_chunkList;
     private BasePass[] m_passes;
-    
+
+    private GameObject m_worldGameObject;
+    private float m_totalChunkCreationTime;
+    private float m_totalMeshCreationTime;
+
 	// Use this for initialization
 	void Start () 
     {
@@ -71,6 +75,7 @@ public class BuildDensityMap : MonoBehaviour
         m_densityTexture = Helper.CreateDensityTexture(32);
 
         float startTime = Time.realtimeSinceStartup;
+        m_worldGameObject = new GameObject("World");
         CreateChunks();
         //if ((m_chosenPass == Passes.APPENDING || m_chosenPass == Passes.NONEMPTY) && m_chunkList.Count > 1)
         //{
@@ -84,10 +89,15 @@ public class BuildDensityMap : MonoBehaviour
         //    m_chunkList[0].triangleCount = prev;
         //}
         float endTime = Time.realtimeSinceStartup;
-        print("Creation time: " + (float)(endTime - startTime));    
+         
         if (DEBUG)
         {
+            print("Total Creation time:" + (float)(endTime - startTime));
+            print("Chunk Creation time: " + m_totalChunkCreationTime);
+            print("Mesh Creation time:" + m_totalMeshCreationTime);
             print("Number of chunks generated: " + m_chunkList.Count);
+
+            print("Chunks per second: " + (float)(m_chunkList.Count / m_totalChunkCreationTime));
         }
         
 	
@@ -130,16 +140,19 @@ public class BuildDensityMap : MonoBehaviour
 	/// <param name="chunk">Chunk.</param>
 	bool BuildChunk(ref Chunk chunk)
 	{
-
+        float startTime = Time.realtimeSinceStartup;
         foreach (BasePass pass in m_passes)
         {
             if (!(pass.DoPass(ref chunk, ref m_densityTexture)))
                 return false;
         }
+        m_totalChunkCreationTime += Time.realtimeSinceStartup - startTime;
+        startTime = Time.realtimeSinceStartup;
         if (m_chosenPass == Passes.INDICES || m_chosenPass == Passes.INDICES_MEDICAL)
-            chunk.GenerateChunkIndexed();
+            chunk.GenerateChunkIndexed().transform.parent = m_worldGameObject.transform;
         else
-            chunk.GenerateChunkObject();
+            chunk.GenerateChunkObject().transform.parent = m_worldGameObject.transform;
+        m_totalMeshCreationTime += Time.realtimeSinceStartup - startTime;
         return true ;
 
 	}
