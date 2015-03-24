@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 public class BuildDensityMap : MonoBehaviour
 {
-    public enum Passes { NAIVE, APPENDING, NONEMPTY, INDICES, MEDICAL};
+    public enum Passes { NAIVE, APPENDING, NONEMPTY, INDICES, INDICES_MEDICAL, NONEMPTY_MEDICAL};
     public bool DEBUG = true;
     public Passes m_chosenPass;
     const int SIZE = 32 * 32 * 32 * 5 * 3;
@@ -20,7 +20,7 @@ public class BuildDensityMap : MonoBehaviour
 
     private List<Chunk> m_chunkList;
     private BasePass[] m_passes;
-
+    
 	// Use this for initialization
 	void Start () 
     {
@@ -46,7 +46,7 @@ public class BuildDensityMap : MonoBehaviour
                 m_passes[1] = new ListNonemptyCellsPass();
                 m_passes[2] = new NonemptyGenVerticesPass();
                 break;
-            case Passes.MEDICAL:
+            case Passes.NONEMPTY_MEDICAL:
                 m_passes = new BasePass[3];
                 m_passes[0] = new BuildDensityMedicalPass();
                 m_passes[1] = new ListNonemptyCellsPass();
@@ -55,6 +55,13 @@ public class BuildDensityMap : MonoBehaviour
             case Passes.INDICES:
                 m_passes = new BasePass[4];
                 m_passes[0] = new BuildDensityPass();
+                m_passes[1] = new ListNonemptyCellsPass();
+                m_passes[2] = new SplatGenVerticesPass();
+                m_passes[3] = new GenIndicesPass();
+                break;
+            case Passes.INDICES_MEDICAL:
+                m_passes = new BasePass[4];
+                m_passes[0] = new BuildDensityMedicalPass();
                 m_passes[1] = new ListNonemptyCellsPass();
                 m_passes[2] = new SplatGenVerticesPass();
                 m_passes[3] = new GenIndicesPass();
@@ -129,7 +136,7 @@ public class BuildDensityMap : MonoBehaviour
             if (!(pass.DoPass(ref chunk, ref m_densityTexture)))
                 return false;
         }
-        if (m_chosenPass == Passes.INDICES)
+        if (m_chosenPass == Passes.INDICES || m_chosenPass == Passes.INDICES_MEDICAL)
             chunk.GenerateChunkIndexed();
         else
             chunk.GenerateChunkObject();
@@ -153,6 +160,14 @@ public class BuildDensityMap : MonoBehaviour
     void OnApplicationQuit()
     {
         Helper.Finalize();
+        foreach (BasePass pass in m_passes)
+            pass.Release();
+        foreach (Chunk c in m_chunkList)
+        {
+            c.Release();
+        }
+        if(m_densityTexture != null)
+            m_densityTexture.Release();
     }
     void OnDestroy()
     {
@@ -162,7 +177,8 @@ public class BuildDensityMap : MonoBehaviour
         {
             c.Release();
         }
-        m_densityTexture.Release();
+        if (m_densityTexture != null)
+            m_densityTexture.Release();
     }
 	
 

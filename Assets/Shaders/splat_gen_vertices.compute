@@ -77,7 +77,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	// if vertex 3,1,4 are different from vertex 0. If they are we should build a vertex on that edge
 	int3 build_vert_on_edge = abs( int3(bit3,bit1,bit4) - bit0.xxx );
 	int numVerts = build_vert_on_edge.x + build_vert_on_edge.y + build_vert_on_edge.z;
-	uint index = 0;
+	uint index = -1;
 	// index is the startIndex for the vertices we are about to generate.
 	InterlockedAdd(indexCounter[0], numVerts, index);
 	float3 localCoordLL = (float3)(unpacked_coord * invVoxelDim);
@@ -85,7 +85,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	uvwLL.y = 1 - uvwLL.y;
 	float densityV0 = densityTexture.SampleLevel(_LinearClampSampler, uvwLL, 0);
 
-	int3 vertexIndices = int3(-1,-1,-1);
+	int3 vertexIndices = int3(-2,-3,-4);
 	if (build_vert_on_edge.x != 0) // should we build vertex on edge 3?
 	{
 		float3 offset = float3(invVoxelDim, 0, 0);
@@ -99,7 +99,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 		// convert from local to world coordinates
 		myVertex vert;
 		vert.vertPos = localToWorldCoord(pLocal);
-		//vert.vertPos = pLocal;
+		vert.vertPos = pLocal;
 		vert.vertNormal = normal;
 		vertexBuffer[index] = vert;
 		vertexIndices.x = index;
@@ -118,7 +118,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 		// convert from local to world coordinates
 		myVertex vert;
 		vert.vertPos = localToWorldCoord(pLocal);
-		//vert.vertPos = pLocal;
+		vert.vertPos = pLocal;
 		vert.vertNormal = normal;
 		vertexBuffer[index] = vert;
 		vertexIndices.y = index;
@@ -137,7 +137,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 		// convert from local to world coordinates
 		myVertex vert;
 		vert.vertPos = localToWorldCoord(pLocal);
-		//vert.vertPos = pLocal;
+		vert.vertPos = pLocal;
 		vert.vertNormal = normal;
 		vertexBuffer[index] = vert;
 		vertexIndices.z = index;

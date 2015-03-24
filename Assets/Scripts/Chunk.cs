@@ -71,7 +71,8 @@ public class Chunk {
     {
         GameObject chunkObject = new GameObject("Chunk");
         int numTriangles = indexCount / 3;
-        int numMeshes = Mathf.CeilToInt(numTriangles / MAX_TRIANGLES);
+        //int numMeshes = Mathf.CeilToInt(numTriangles / MAX_TRIANGLES);
+        int numMeshes = (vertexCount / MAX_VERTICES )/2 + 1;
         int numTrianglesLeft = numTriangles;
 
         Vector3[] vertBuffer = new Vector3[vertexCount * 2];
@@ -81,47 +82,22 @@ public class Chunk {
         indexBuffer.GetData(indices);
         int numVerticesLeft = vertexCount;
         int buffIndex = 0;
-        while(numVerticesLeft > 0)
+        for (int m = 0; m < numMeshes; m++)
         {
             GameObject obj = new GameObject("Chunk Part");
             Mesh mesh;
-            if (vertexCount <= MAX_VERTICES)
-            {
-                mesh = new Mesh();
-
-                Vector3[] vertices = new Vector3[vertexCount];
-                Vector3[] normals = new Vector3[vertexCount];
-                for (int i = 0; i < vertexCount; i++)
-                {
-                    vertices[i] = vertBuffer[buffIndex];
-                    normals[i] = vertBuffer[buffIndex + 1];
-                    buffIndex += 2;
-                }
-                mesh.vertices = vertices;
-                mesh.normals = normals;
-                mesh.triangles = indices;
-
-                numVerticesLeft -= vertexCount;
-            }
-            else
-            {
-
-                mesh = GenerateMeshIndexed(ref vertBuffer, ref indices, ref buffIndex, ref numVerticesLeft);
-           
-            }
+            mesh = GenerateMeshIndexed(ref vertBuffer, ref indices, ref buffIndex, ref numTrianglesLeft, ref numVerticesLeft);
 
             obj.AddComponent<MeshFilter>();
             obj.AddComponent<MeshRenderer>();
             obj.GetComponent<Renderer>().material = chunkMatMesh;
             obj.GetComponent<MeshFilter>().mesh = mesh;
             obj.transform.parent = chunkObject.transform;
-            obj.transform.position = chunkObject.transform.position;
+            obj.transform.position = wsPosLL;
+            obj.transform.localScale = wsChunkDim;
         }
-        
-       
-        
-        vertexBuffer.Release();
-        indexBuffer.Release();
+
+        Release();
         return chunkObject;
     }
     public GameObject GenerateChunkObject()
@@ -150,46 +126,65 @@ public class Chunk {
         triangleBuffer.Release();
         return chunkObject;
     }
-    private Mesh GenerateMeshIndexed(ref Vector3[] vertBuffer, ref int[] indices, ref int startIndex, ref int numVerticesLeft)
+    private Mesh GenerateMeshIndexed(ref Vector3[] vertBuffer, ref int[] indices, ref int startIndex, ref int numTrianglesLeft, ref int numVerticesLeft)
     {
         Mesh mesh = new Mesh();
         int numVertices = Mathf.Min(numVerticesLeft, MAX_VERTICES);
-        Vector3[] vertices = new Vector3[numVertices];
-        Vector3[] normals= new Vector3[numVertices];
+       // Vector3[] vertices = new Vector3[numVertices];
+        //Vector3[] normals= new Vector3[numVertices];
+        List<Vector3> vertexList = new List<Vector3>(Mathf.Min(vertexCount, MAX_VERTICES));
+        List<Vector3> normalList = new List<Vector3>(Mathf.Min(vertexCount, MAX_VERTICES));
         Dictionary<int, int> vMap = new Dictionary<int, int>();
-        List<int> vIndices = new List<int>();
+        int numTriangles = Mathf.Min(numTrianglesLeft, MAX_TRIANGLES);
         int numVerticesAdded = 0;
-        int idx = startIndex;
-        int vSize = 2; 
-        while(numVerticesAdded < numVertices)
+        int vSize = 2;
+        int[] triangles = new int[numTriangles * 3];
+        int i = 0;
+
+        for (int t = 0; t < numTriangles; t++ )
         {
-            // get vertexID from indices, this is the index and ID of a vertex in the vertexBuffer
-            int vID = indices[idx*vSize];
-            // check if we have already added that vertex to the vertices array
-            if(vMap.ContainsKey(vID))
+            for(int v = 0; v < 3; v++)
             {
-                // we have already added this vertex to the vertices array, get the index of that vertex
-                vIndices.Add(vMap[vID]);
-                idx++;
-            }
-            else
-            {
-                // the vertex has not been added, so do it
-                vertices[numVerticesAdded] = vertBuffer[vID];
-                normals[numVerticesAdded] = vertBuffer[vID + 1];
-                // add the index to this vertex into the dictionary, the key is the vertexID and the value is the index into the vertices array
-                vMap.Add(vID, numVerticesAdded);
-                // add the index to the vertex into the vIndices array
-                vIndices.Add(numVerticesAdded);
-                numVerticesAdded++;
-                idx++;
+                i = 3*t + v;
+                int vID = indices[startIndex + i];
+                if (vMap.ContainsKey(vID))
+                {
+                    // we have already added this vertex to the vertices array, get the index of that vertex
+                    triangles[i] = vMap[vID];
+                }
+                else
+                {
+                    //vertices[numVerticesAdded] = vertBuffer[vID * vSize];
+                    try
+                    {
+                        vertexList.Add(vertBuffer[vID * vSize]);
+                        //normals[numVerticesAdded] = vertBuffer[vID * vSize + 1];
+                        normalList.Add(vertBuffer[vID * vSize + 1]);
+                        // add the index to this vertex into the dictionary, the key is the vertexID and the value is the index into the vertices array
+                        vMap.Add(vID, numVerticesAdded);
+                        // add the index to the vertex into the vIndices array
+                        triangles[i] = numVerticesAdded;
+                        numVerticesAdded++;
+                    }
+                    catch(IndexOutOfRangeException e)
+                    {
+                        Debug.Log("error" + e);
+                        Debug.Log("vID: " + vID);
+                        Debug.Log("vertexCount" + vertexCount);
+                    }
+                    
+                }
             }
         }
+   
 
-        mesh.vertices = vertices;
-        mesh.normals = normals;
-        mesh.triangles = vIndices.ToArray();
-        startIndex += vIndices.Count;
+        //mesh.vertices = vertices;
+        //mesh.normals = normals;
+        mesh.vertices = vertexList.ToArray();
+        mesh.normals = normalList.ToArray();
+        mesh.triangles = triangles;
+        startIndex += numTriangles*3;
+        numTrianglesLeft -= numTriangles;
         numVerticesLeft -= numVerticesAdded;
         return mesh;
     }

@@ -49,11 +49,12 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 		numPolys = 0;
 	uint index = -1;
 	// get start index from indexCounter and then add 3 * numpolys, since we will add 3 indices per polygon generated into the indexbuffer
-	InterlockedAdd(indexCounter[0], numPolys*3, index);
+	//InterlockedAdd(indexCounter[0], numPolys*3, index);
 	uint3 sampleCellCoord;
 	for (int n = 0; n < numPolys; n++)
 	{
 
+		int vIndex[3];
 		
 		for (int e = 0; e < 3; e++)
 		{
@@ -65,11 +66,21 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 			uint3 offsetCellCoord = edge_to_cell[edgeNum].xyz;
 			uint xyz = edge_to_cell[edgeNum].w;// the 4th component tells us which component in the loaded splat index to look at
 			sampleCellCoord = unpacked_coord + offsetCellCoord;
-			uint vertexIndex = VertexIDVol.Load(int4(sampleCellCoord, 0))[xyz];
-			indexBuffer[index] = vertexIndex;
-			index++;
+			//uint vertexIndex = VertexIDVol.Load(int4(sampleCellCoord, 0))[xyz];
+			vIndex[e] = VertexIDVol.Load(int4(sampleCellCoord, 0))[xyz];
+			//indexBuffer[index] = vertexIndex;
+			//index++;
 			
 		}
+		int i = -1;
+		if(vIndex[0] >= 0 && vIndex[1] >= 0 && vIndex[2] >= 0)
+		{
+			InterlockedAdd(indexCounter[0], 3, i);
+			indexBuffer[i] = vIndex[0];
+			indexBuffer[i + 1] = vIndex[1];
+			indexBuffer[i + 2] = vIndex[2];
+		}
+		
 
 	}	
 }
